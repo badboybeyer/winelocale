@@ -47,6 +47,7 @@ import gi
 from pathlib import Path
 from struct import pack, unpack
 from gnome import url_show         # handle URL clicks in GUI
+import importlib.resources as resources
 
 gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk
@@ -79,20 +80,20 @@ Pull in the translation that matches our locale
 -------------------------------------------------------------------------------
 '''
 # Pull in strings
-if(os.environ["LANG"][0:5] != "en_US"):
-    try:
-        file = open(I18N + "/" + os.environ["LANG"][0:5] + ".lang")
-    except IOError:
-        print("Unable to find a language file for " + os.environ["LANG"][0:5] +
-              ", using en_US")
-        I18N_FILE = I18N + "/en_US.lang"
+langCode = os.environ["LANG"][0:5]
+US_I18N_FILE = "en_US.lang"
+if langCode != "en_US":
+    if resources.is_resource('winelocal.i18n', f'{langCode.lang}'):
+        I18N_FILE = f'{langCode.lang}'
     else:
-        I18N_FILE = I18N + "/" + os.environ["LANG"][0:5] + ".lang"
+        print(f"Unable to find a language file for {langCode}"
+              ", using en_US", file=sys.stderr)
+        I18N_FILE = US_I18N_FILE
 else:
-    I18N_FILE = I18N + "/en_US.lang"
+    I18N_FILE = US_I18N_FILE
 
 STRINGS = configparser.ConfigParser()
-with open(I18N_FILE, 'r') as stringsFh:
+with resources.open_text('winelocal.i18n', I18N_FILE) as stringsFh:
     STRINGS.readfp(stringsFh)
 
 '''
