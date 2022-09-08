@@ -1,0 +1,35 @@
+[build-system]
+requires = [
+    "hatchling>=1.8.1",
+]
+build-backend = "hatchling.build"
+
+[project]
+name = "winelocale"
+dynamic = [
+    "version",
+]
+description = "a Python script to immitate Microsoft's AppLocale for Wine"
+readme = "README.md"
+license = { file="LICENSE" }
+requires-python = ">=3.7"
+authors = [
+    { name = "Derrick Sobodash", email = "derrick@cinnamonpirate.com" },
+]
+dependencies = [
+    "pygobject",
+]
+
+[project.scripts]
+winelocale = "current.winelocale:main"
+
+[project.urls]
+Homepage = "http://code.google.com/p/winelocale/"
+
+[tool.hatch.version]
+path = "winelocale/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/winelocale",
+]
