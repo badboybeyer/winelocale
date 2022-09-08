@@ -90,10 +90,10 @@ if(os.environ["LANG"][0:5] != "en_US"):
         I18N_FILE = I18N + "/" + os.environ["LANG"][0:5] + ".lang"
 else:
     I18N_FILE = I18N + "/en_US.lang"
-STRINGSFP = open(I18N_FILE, 'r')
+
 STRINGS = configparser.ConfigParser()
-STRINGS.readfp(STRINGSFP)
-STRINGSFP.close()
+with open(I18N_FILE, 'r') as stringsFh:
+    STRINGS.readfp(stringsFh)
 
 '''
 -------------------------------------------------------------------------------
