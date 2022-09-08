@@ -1,9 +1,9 @@
 # WineLocale
-version 0.6.1
-By Derrick Sobodash
-Released on ?? ??, 2009
-http://code.google.com/p/winelocale/
 
+* version 0.6.1
+* By Derrick Sobodash
+* Released on ?? ??, 2009
+* http://code.google.com/p/winelocale/
 
 # Purpose
 
