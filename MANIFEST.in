@@ -1,2 +1,3 @@
-winelocale.svg
-winelocale.png
+inlcude winelocale.svg
+include winelocale.png
+include i18n/*lang
