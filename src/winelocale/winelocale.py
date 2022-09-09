@@ -43,10 +43,11 @@ import subprocess
 import pango
 import configparser
 import gi
+from dataclasses import dataclass
 
 from pathlib import Path
 from struct import pack, unpack
-from gnome import url_show         # handle URL clicks in GUI
+from gnome import url_show
 import importlib.resources as resources
 
 gi.require_version('Gtk', '4.0')
@@ -80,21 +81,24 @@ Pull in the translation that matches our locale
 -------------------------------------------------------------------------------
 '''
 # Pull in strings
+DEFAULT_LANG_CODE = 'en_US'
+projectFiles = resources.files('winelocale')
 langCode = os.environ["LANG"][0:5]
-US_I18N_FILE = "en_US.lang"
-if langCode != "en_US":
-    if resources.is_resource('winelocal.i18n', f'{langCode.lang}'):
-        I18N_FILE = f'{langCode.lang}'
-    else:
-        print(f"Unable to find a language file for {langCode}"
-              ", using en_US", file=sys.stderr)
-        I18N_FILE = US_I18N_FILE
-else:
-    I18N_FILE = US_I18N_FILE
+
+# TODO: refactor to reduce code reuse
+if langCode != DEFAULT_LANG_CODE:
+    i18nFilePath = projectFiles / 'i18n' / f'{langCode.lang}'
+    with resources.as_file(i18nFilePath) as filePath:
+        if not filePath.exists():
+            print(f"Unable to find a language file for {langCode}"
+                  ", using en_US", file=sys.stderr)
+            langCode = DEFAULT_LANG_CODE
 
 STRINGS = configparser.ConfigParser()
-with resources.open_text('winelocal.i18n', I18N_FILE) as stringsFh:
-    STRINGS.readfp(stringsFh)
+i18nFilePath = projectFiles / 'i18n' / f'{langCode.lang}'
+with resources.as_file(projectFiles / 'i18n' / f'{langCode.lang}') as filePath:
+    with open(filePath) as stringsFh:
+        STRINGS.readfp(stringsFh)
 
 '''
 -------------------------------------------------------------------------------
@@ -102,7 +106,8 @@ Pango gotchas
 -------------------------------------------------------------------------------
 '''
 PANGO_SCALE = 1024   # Why isn't this set in Python's pango module?
-WINE_MENUBAR = 0      # Need to hack this to match
+# variable seems unused
+# WINE_MENUBAR = 0      # Need to hack this to match
 
 # 96dpi table (default)
 # Pango sizes do not match up to the sizes at which Wine draws
@@ -318,42 +323,122 @@ REG_METRICS = {
     "WindowMetrics]\n\"StatusFont\"="
 }
 
-'''
--------------------------------------------------------------------------------
-Initialize global variables
--------------------------------------------------------------------------------
-'''
-HAVE_FONTS = {
-  "AR PL UMing CN": False,
-  "AR PL UMing TW": False,
-  "Kochi Gothic": False,
-  "Kochi Mincho": False,
-  "UnBatang": False,
-  "UnDotum": False
-  }
 
-DEFAULT_LOCALE = "en_US"
-DEFAULT_EXE = None
-USE_SMOOTHING = False
-USE_HIDPIFONT = False
-USE_SHORTCUT = False
+@dataclass
+class Config:
+    logFont: dict = {
+        "lfHeight":         10,
+        "lfWidth":          0,
+        "lfEscapement":     0,
+        "lfOrientation":    0,
+        "lfWeight":         400,
+        "lfItalic":         0,
+        "lfUnderline":      0,
+        "lfStrikeOut":      0,
+        "lfCharSet":        DEFAULT_CHARSET,
+        "lfOutPrecision":   0,
+        "lfClipPrecision":  0,
+        "lfQuality":        0,
+        "lfPitchAndFamily": VARIABLE_PITCH ^ FF_SWISS,
+        "lfFaceName":       "Bitstream Vera Sans"
+    }
+    haveFonts: dict = {
+        "AR PL UMing CN": False,
+        "AR PL UMing TW": False,
+        "Kochi Gothic": False,
+        "Kochi Mincho": False,
+        "UnBatang": False,
+        "UnDotum": False
+    }
+    locale: str = "en_US"
+    useSmoothing: bool = None
+    useHiDpiFont: bool = None
+    useShortcut: bool = None
+    programPath: Path = None
 
-LOGFONT = {
-  "lfHeight":         10,
-  "lfWidth":          0,
-  "lfEscapement":     0,
-  "lfOrientation":    0,
-  "lfWeight":         400,
-  "lfItalic":         0,
-  "lfUnderline":      0,
-  "lfStrikeOut":      0,
-  "lfCharSet":        DEFAULT_CHARSET,
-  "lfOutPrecision":   0,
-  "lfClipPrecision":  0,
-  "lfQuality":        0,
-  "lfPitchAndFamily": VARIABLE_PITCH ^ FF_SWISS,
-  "lfFaceName":       "Bitstream Vera Sans"
-  }
+    def updateConfigFile(self):
+        "Wipes the config file and populates it with default values."
+        config = configparser.ConfigParser()
+        config.add_section("settings")
+        # Main settings
+        config.set("settings", "locale", self.locale)
+        config.set("settings", "gtkfontname", self.logFont["lfFaceName"])
+        config.set("settings", "gtkfontsize", str(self.logFont["lfHeight"]))
+        config.set("settings", "gtkfontweight", str(self.logFont["lfWeight"]))
+        config.set("settings", "gtkfontitalic",
+                   str(int(self.logFont["lfItalic"])))
+        config.set("settings", "shortcut", str(int(self.useShortcut)))
+        config.set("settings", "smoothing", str(int(self.useSmoothing)))
+        config.set("settings", "hidpifont", str(int(self.useHiDpiFont)))
+        config.set("settings", "has_batang",
+                   str(int(self.haveFonts["UnBatang"])))
+        config.set("settings", "has_dotum",
+                   str(int(self.haveFonts["UnDotum"])))
+        config.set("settings", "has_umingt",
+                   str(int(self.haveFonts["AR PL UMing TW"])))
+        config.set("settings", "has_umingc",
+                   str(int(self.haveFonts["AR PL UMing CN"])))
+        config.set("settings", "has_kgoth",
+                   str(int(self.haveFonts["Kochi Gothic"])))
+        config.set("settings", "has_kmin",
+                   str(int(self.haveFonts["Kochi Mincho"])))
+        with open(CONFIG, 'w') as configfp:
+            config.write(configfp)
+        return
+
+    def updateConfigFromFile(self):
+        "Update configuration using the config file"
+        if not CONFIG.exists():
+            self.updateConfigFile()
+
+        cp = configparser.ConfigParser()
+        with open(CONFIG, 'r') as configfp:
+            cp.readfp(configfp)
+
+        self.logFont["lfHeight"] = cp.getint("settings", "gtkfontsize",
+                                             self.logFont["lfHeight"])
+        self.logFont["lfWeight"] = cp.getint("settings", "gtkfontweight",
+                                             self.logFont["lfWeight"])
+        self.logFont["lfItalic"] = cp.getboolean("settings", "gtkfontitalic",
+                                                 self.logFont["lfItalic"])
+        if self.logFont["lfHeight"] == 1:
+            self.logFont["lfQuality"] = CLEARTYPE_QUALITY
+        else:
+            self.logFont["lfQuality"] = DEFAULT_QUALITY
+        self.logFont["lfFaceName"] = cp.get("settings", "gtkfontname",
+                                            self.logFont["lfFaceName"])
+
+        self.haveFonts["AR PL UMing CN"] = \
+            cp.getboolean("settings", "has_umingc",
+                          self.haveFonts["AR PL UMing CN"])
+        self.haveFonts["AR PL UMing TW"] = \
+            cp.getboolean("settings", "has_umingt",
+                          self.haveFonts["AR PL UMing TW"])
+        self.haveFonts["Kochi Gothic"] = \
+            cp.getboolean("settings", "has_kgoth",
+                          self.haveFonts["Kochi Gothic"])
+        self.haveFonts["Kochi Mincho"] = \
+            cp.getboolean("settings", "has_kmin",
+                          self.haveFonts["Kochi Mincho"])
+        self.haveFonts["UnBatang"] = \
+            cp.getboolean("settings", "has_batang",
+                          self.haveFonts["UnBatang"])
+        self.haveFonts["UnDotum"] = \
+            cp.getboolean("settings", "has_dotum",
+                          self.haveFonts["UnDotum"])
+        self.locale = cp.get("settings", "locale")
+        self.useSmoothing = cp.getboolean("settings", "smoothing")
+        self.useHiDpiFont = cp.getboolean("settings", "hidpifont")
+        self.useShortcut = cp.getboolean("settings", "shortcut")
+        return
+
+    def updateConfigFromArgs(self, args):
+        if not isinstance(args.exe, type(None)):
+            self.programPath = args.exe
+        if not isinstance(args.locale, type(None)):
+            self.locale = args.locale
+        return
+
 
 '''
 -------------------------------------------------------------------------------
@@ -377,12 +462,12 @@ LOCALES = {
   "zh_TW": ("中文(繁體)", "zh_TW.UTF-8"),
   }
 
-LOCALES_LIST = None
-
 
 class WineLocaleWindow(Gtk.Window):
     "Contains the GUI and all necessary function hooks."
-    def __init__(self):
+    def __init__(self, appConfig):
+        self.appConfig = appConfig
+
         super().__init__(title=PROGRAM)
 
         self.set_size_request(400, -1)
@@ -455,18 +540,17 @@ class WineLocaleWindow(Gtk.Window):
         row4.pack_start(self.btnexecute, False, False)
         self.box.pack_start(row4, False, False)
 
-        # Check which fonts exist (globals)
+        # Check which fonts exist
         context = self.txtfile.get_pango_context()
-        set_fonts(context.list_families())
+        set_fonts(context.list_families(), appConfig)
 
         # Store our current Gtk font info to a LOGFONT
-        set_logfont_from_gtk(context.get_font_description())
+        set_logfont_from_gtk(context.get_font_description(), appConfig)
 
         # Populate the locales drop-down
-        global LOCALES_LIST
-        LOCALES_LIST = get_locales()
-        for s in LOCALES_LIST:
-            self.cmblocales.append_text(s[0])
+        self.localeList = getLocaleList(appConfig)
+        for langTitle, langCode in self.localeList:
+            self.cmblocales.append_text(langTitle)
         self.cmblocales.set_active(0)
 
         # Fix the expander to suit work area
@@ -479,21 +563,21 @@ class WineLocaleWindow(Gtk.Window):
         self.btnclose.connect("clicked", self.destroy)
         self.btnhelp.connect("clicked", self.about)
         self.btnexecute.connect("clicked", self.execute)
-        getBinaryLogFont(locale, logFont)
+        getBinaryLogFont(appConfig.locale, appConfig.logFont)
 
         # Update settings
-        if(USE_SHORTCUT):
+        if appConfig.useShortcut:
             self.chkshortcut.set_active(True)
-        if(USE_SMOOTHING):
+        if appConfig.useSmoothing:
             self.chksmoothing.set_active(True)
-        if(USE_HIDPIFONT):
+        if appConfig.useHiDpiFont:
             self.chk120dpi.set_active(True)
-        for i in range(0, len(LOCALES_LIST)):
-            if(LOCALES_LIST[i][1][0:5] == DEFAULT_LOCALE):
+        for i in range(0, len(self.localeList)):
+            if self.localeList[i][1][0:5] == appConfig.locale:
                 self.cmblocales.set_active(i)
 
-        if not isinstance(DEFAULT_EXE, type(None)):
-            self.txtfile.set_text(DEFAULT_EXE)
+        if not isinstance(appConfig.programPath, type(None)):
+            self.txtfile.set_text(appConfig.programPath)
             self.set_focus(self.btnexecute)
 
         return
@@ -610,25 +694,14 @@ class WineLocaleWindow(Gtk.Window):
         self.window.hide()
 
         # Update settings
-        # TODO: fix globals
-        global DEFAULT_LOCALE, DEFAULT_EXE, USE_SMOOTHING, USE_HIDPIFONT, USE_SHORTCUT
-        if(self.chkshortcut.get_active()):
-            USE_SHORTCUT = True
-        else:
-            USE_SHORTCUT = False
-        if(self.chksmoothing.get_active()):
-            USE_SMOOTHING = True
-        else:
-            USE_SMOOTHING = False
-        if(self.chk120dpi.get_active()):
-            USE_HIDPIFONT = True
-        else:
-            USE_HIDPIFONT = False
-        DEFAULT_LOCALE = LOCALES_LIST[self.cmblocales.get_active()][1][0:5]
-        DEFAULT_EXE = self.txtfile.get_text()
-        createDeafultConfig()
-        configFromFile = loadConfigFromFile()
-        shellwine(programPath, locale, configFromFile.logFont)
+        self.appConfig.useShortcut = self.chkshortcut.get_active()
+        self.appConfig.useSmoothing = self.chksmoothing.get_active()
+        self.appConfig.useHiDpiFont = self.chk120dpi.get_active()
+        self.appConfig.locale = \
+            self.localeList[self.cmblocales.get_active()][1][0:5]
+        self.appConfig.programPath = Path(self.txtfile.get_text())
+        self.appConfig.updateConfigFile()
+        shellwine(self.appConfig)
 
         Gtk.main_quit()
 
@@ -641,68 +714,56 @@ class WineLocaleWindow(Gtk.Window):
         return False
 
 
-def get_ja():
+def get_ja(appConfig):
     "Checks if fonts needed for Japanese support are present."
-    if(HAVE_FONTS["Kochi Gothic"] and HAVE_FONTS["Kochi Mincho"]):
-        return(True)
-    else:
-        return(False)
+    return appConfig.haveFonts["Kochi Gothic"] and \
+        appConfig.haveFonts["Kochi Mincho"]
 
 
-def get_ko():
+def get_ko(appConfig):
     "Checks if fonts needed for Korean support are present."
-    if(HAVE_FONTS["UnBatang"] and HAVE_FONTS["UnDotum"]):
-        return(True)
-    else:
-        return(False)
+    return appConfig.haveFonts["UnBatang"] and appConfig.haveFonts["UnDotum"]
 
 
-def get_cn():
+def get_cn(appConfig):
     "Checks if fonts needed for Simplified Chinese support are present."
-    if(HAVE_FONTS["AR PL UMing CN"]):
-        return(True)
-    else:
-        return(False)
+    return appConfig.haveFonts["AR PL UMing CN"]
 
 
-def get_tw():
+def get_tw(appConfig):
     "Checks if fonts needed for Traditional Chinese support are present."
-    if(HAVE_FONTS["AR PL UMing TW"]):
-        return(True)
-    else:
-        return(False)
+    return appConfig.haveFonts["AR PL UMing TW"]
 
 
-def get_locales():
+def getLocaleList(appConfig):
     "Returns a list of all present locales."
-    LOCALE_LIST = [LOCALES["en_US"], LOCALES["ru_RU"]]
-    if(get_cn()):
-        LOCALE_LIST.append(LOCALES["zh_CN"])
-    if(get_tw()):
-        LOCALE_LIST.append(LOCALES["zh_TW"])
-    if(get_ko()):
-        LOCALE_LIST.append(LOCALES["ko_KR"])
-    if(get_ja()):
-        LOCALE_LIST.append(LOCALES["ja_JP"])
-    return(LOCALE_LIST)
+    localeList = [LOCALES["en_US"], LOCALES["ru_RU"]]
+    if get_cn(appConfig):
+        localeList.append(LOCALES["zh_CN"])
+    if get_tw(appConfig):
+        localeList.append(LOCALES["zh_TW"])
+    if get_ko(appConfig):
+        localeList.append(LOCALES["ko_KR"])
+    if get_ja(appConfig):
+        localeList.append(LOCALES["ja_JP"])
+    return localeList
 
 
-def set_fonts(fonts):
-    "Updates globals with present system fonts."
-    global HAVE_FONTS
+def set_fonts(fonts, appConfig):
+    "Updates appConfig haveFonts with present system fonts."
     for font in fonts:
         if font.get_name() == 'UnBatang':
-            HAVE_FONTS["UnBatang"] = True
+            appConfig.haveFonts["UnBatang"] = True
         elif font.get_name() == 'UnDotum':
-            HAVE_FONTS["UnDotum"] = True
+            appConfig.haveFonts["UnDotum"] = True
         elif font.get_name() == 'AR PL UMing TW':
-            HAVE_FONTS["AR PL UMing TW"] = True
+            appConfig.haveFonts["AR PL UMing TW"] = True
         elif font.get_name() == 'AR PL UMing CN':
-            HAVE_FONTS["AR PL UMing CN"] = True
+            appConfig.haveFonts["AR PL UMing CN"] = True
         elif font.get_name() == 'Kochi Gothic':
-            HAVE_FONTS["Kochi Gothic"] = True
+            appConfig.haveFonts["Kochi Gothic"] = True
         elif font.get_name() == 'Kochi Mincho':
-            HAVE_FONTS["Kochi Mincho"] = True
+            appConfig.haveFonts["Kochi Mincho"] = True
 
 
 def getBinaryLogFont(locale, logFont):
@@ -781,98 +842,24 @@ typedef struct tagLOGFONT {
     return hexstring
 
 
-def set_logfont_from_gtk(pangofont):
-    "Populates the global LOGFONT using data from Gtk."
-    global LOGFONT, WINE_MENUBAR
-    LOGFONT["lfFaceName"] = pangofont.get_family()
-    if (pangofont.get_style() & pango.STYLE_ITALIC or pangofont.get_style() &
-        pango.STYLE_OBLIQUE):
-        LOGFONT["lfItalic"] = 1
-    LOGFONT["lfWeight"] = pangofont.get_weight() + 0
-    LOGFONT["lfHeight"] = pangofont.get_size() / PANGO_SCALE
-    WINE_MENUBAR = GTKTABLE_96[pangofont.get_size() / PANGO_SCALE][1]
-    LOGFONT["lfPitchAndFamily"] = VARIABLE_PITCH ^ FF_SWISS
+def set_logfont_from_gtk(pangofont, appConfig):
+    "Populates the appconfig.logFont using data from Gtk."
+    appConfig.logFont["lfFaceName"] = pangofont.get_family()
+    if pangofont.get_style() & pango.STYLE_ITALIC or pangofont.get_style() & \
+       pango.STYLE_OBLIQUE:
+        appConfig.logFont["lfItalic"] = 1
+    appConfig.logFont["lfWeight"] = pangofont.get_weight() + 0
+    appConfig.logFont["lfHeight"] = pangofont.get_size() / PANGO_SCALE
+    # variable seems unused
+    # WINE_MENUBAR = GTKTABLE_96[pangofont.get_size() / PANGO_SCALE][1]
+    appConfig.logFont["lfPitchAndFamily"] = VARIABLE_PITCH ^ FF_SWISS
 
 
-class Config(object):
-    pass
-
-
-def loadConfigFromFile():
-    "Populates globals from the config file."
-    config = configparser.ConfigParser()
-    with open(CONFIG, 'r') as configfp:
-        config.readfp(configfp)
-
-    configFromFile = Config()
-    logFont = LOGFONT.copy()
-    logFont["lfHeight"] = config.getint("settings", "gtkfontsize",
-                                        LOGFONT["lfHeight"])
-    logFont["lfWeight"] = config.getint("settings", "gtkfontweight",
-                                        LOGFONT["lfWeight"])
-    logFont["lfItalic"] = config.getboolean("settings", "gtkfontitalic",
-                                            LOGFONT["lfItalic"])
-    if logFont["lfHeight"] == 1:
-        logFont["lfQuality"] = CLEARTYPE_QUALITY
-    else:
-        logFont["lfQuality"] = DEFAULT_QUALITY
-    logFont["lfFaceName"] = config.get("settings", "gtkfontname",
-                                       LOGFONT["lfFaceName"])
-    configFromFile.logFont = logFont
-
-    haveFonts = HAVE_FONTS.copy()
-    haveFonts["AR PL UMing CN"] = \
-        config.getboolean("settings", "has_umingc",
-                          HAVE_FONTS["AR PL UMing CN"])
-    haveFonts["AR PL UMing TW"] = \
-        config.getboolean("settings", "has_umingt",
-                          HAVE_FONTS["AR PL UMing TW"])
-    haveFonts["Kochi Gothic"] = config.getboolean("settings", "has_kgoth",
-                                                  HAVE_FONTS["Kochi Gothic"])
-    haveFonts["Kochi Mincho"] = config.getboolean("settings", "has_kmin",
-                                                  HAVE_FONTS["Kochi Mincho"])
-    haveFonts["UnBatang"] = config.getboolean("settings", "has_batang",
-                                              HAVE_FONTS["UnBatang"])
-    haveFonts["UnDotum"] = config.getboolean("settings", "has_dotum",
-                                             HAVE_FONTS["UnDotum"])
-    configFromFile.haveFonts = haveFonts
-
-    configFromFile.locale = config.get("settings", "locale")
-    configFromFile.useSmoothing = config.getboolean("settings", "smoothing")
-    configFromFile.useHiDpiFont = config.getboolean("settings", "hidpifont")
-    configFromFile.useShortcut = config.getboolean("settings", "shortcut")
-    return configFromFile
-
-
-def createDeafultConfig():
-    "Wipes the config file and populates it with default values."
-    config = configparser.ConfigParser()
-    config.add_section("settings")
-    # Main settings
-    config.set("settings", "locale", DEFAULT_LOCALE)
-    config.set("settings", "gtkfontname", LOGFONT["lfFaceName"])
-    config.set("settings", "gtkfontsize", str(LOGFONT["lfHeight"]))
-    config.set("settings", "gtkfontweight", str(LOGFONT["lfWeight"]))
-    config.set("settings", "gtkfontitalic", str(int(LOGFONT["lfItalic"])))
-    config.set("settings", "shortcut", str(int(USE_SHORTCUT)))
-    config.set("settings", "smoothing", str(int(USE_SMOOTHING)))
-    config.set("settings", "hidpifont", str(int(USE_HIDPIFONT)))
-    config.set("settings", "has_batang", str(int(HAVE_FONTS["UnBatang"])))
-    config.set("settings", "has_dotum", str(int(HAVE_FONTS["UnDotum"])))
-    config.set("settings", "has_umingt",
-               str(int(HAVE_FONTS["AR PL UMing TW"])))
-    config.set("settings", "has_umingc",
-               str(int(HAVE_FONTS["AR PL UMing CN"])))
-    config.set("settings", "has_kgoth", str(int(HAVE_FONTS["Kochi Gothic"])))
-    config.set("settings", "has_kmin", str(int(HAVE_FONTS["Kochi Mincho"])))
-    with open(CONFIG, 'w') as configfp:
-        config.write(configfp)
-    return
-
-
-def generateRegistry(locale, logFont):
+def generateRegistry(appConfig):
     """Create a registry patch based on all config settings in
     /tmp/winelocale.reg."""
+    locale = appConfig.locale
+    logFont = appConfig.logFont
     with open(TEMP / "winelocale.reg", "w") as registry:
         # Registry file header
         registry.write(REGEDIT)
@@ -903,14 +890,16 @@ def generateRegistry(locale, logFont):
 
         # Fix the menubar height
         registry.write(REG_MENUH + "\"" +
-                       str(GTKTABLE_96[LOGFONT["lfHeight"]][1]) + "\"\n\n")
+                       str(GTKTABLE_96[appConfig.logFont["lfHeight"]][1]) +
+                       "\"\n\n")
         registry.write(REG_MENUW + "\"" +
-                       str(GTKTABLE_96[LOGFONT["lfHeight"]][1]) + "\"\n\n")
+                       str(GTKTABLE_96[appConfig.logFont["lfHeight"]][1]) +
+                       "\"\n\n")
 
         # Write/remove smoothing
 
         # Write/remove 120dpi
-        if(USE_HIDPIFONT):
+        if appConfig.useHiDpiFont:
             registry.write(REG_SET120DPI)
         else:
             registry.write(REG_SET96DPI)
@@ -919,12 +908,12 @@ def generateRegistry(locale, logFont):
     return
 
 
-def shellwine(programPath, locale, logFont):
+def shellwine(appConfig):
     "Prepares the registry and shells Wine."
     initialLang = os.environ['LANG']
     env = os.environ.copy()
     env['WINEDEBUG'] = "-all"
-    generateRegistry(locale, logFont)
+    generateRegistry(appConfig)
     try:
         compProc = subprocess.run(["wine", "regedit.exe",
                                    "/tmp/winelocale.reg"], check=True, env=env)
@@ -936,8 +925,8 @@ def shellwine(programPath, locale, logFont):
     except (OSError, subprocess.CalledProcessError) as e:
         print("Execution failed:", e, file=sys.stderr)
 
-    winProgPath = "Z:\\" + programPath.replace("/", "\\")
-    env['LANG'] = LOCALES[locale][1]
+    winProgPath = "Z:\\" + appConfig.programPath.replace("/", "\\")
+    env['LANG'] = LOCALES[appConfig.locale][1]
     subprocess.run(["wine", winProgPath], env=env)
     env['LANG'] = initialLang
     # why would this do anything different than the previous time?
@@ -958,24 +947,24 @@ def shellwine(programPath, locale, logFont):
 def main():
     import argparse
 
-    if not CONFIG.exists():
-        createDeafultConfig()
-    configFromFile = loadConfigFromFile()
+    appConfig = Config()
 
     parser = argparse.ArgumentParser(description=DESCRIP)
     parser.add_argument('--version', action='version',
                         version='%(prog)s ' + VERSION)
-    parser.add_argument("-l", "--locale", default=configFromFile.locale,
+    parser.add_argument("-l", "--locale",
                         help="specify a locale in which to load"
                         " the target executable (ISO 3166 standard)")
-    parser.add_argument("exe", default=DEFAULT_EXE, type=Path,
+    parser.add_argument("exe", type=Path, default=None,
                         help="target executable to run in wine with locale")
     args = parser.parse_args()
 
-    if not isinstance(args.locale, type(None)) and args.exe.exists():
-        # What was this test for? CODES.index(options.locale)) != false
-        shellwine(args.exe, args.locale, configFromFile.logFont)
+    appConfig.updateConfigFromFile()
+    appConfig.updateConfigFromArgs(args)
 
+    if not isinstance(args.locale, type(None)) and args.exe.exists():
+        # dont show the GUI if the CLI has sufficient configuration
+        shellwine(appConfig)
     else:
         win = WineLocaleWindow()
         win.connect("destroy", Gtk.main_quit)
