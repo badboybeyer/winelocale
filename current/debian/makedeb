@@ -1,3 +1,0 @@
-#!/bin/sh
-cp ../README .
-checkinstall --maintainer=derrick@cinnamonpirate.com --pkglicense="BSD License" --pkggroup=x11 --require="wine, python2.5, python-gtk2, ttf-arphic-uming, ttf-sazanami-gothic, ttf-sazanami-mincho, ttf-baekmuk, culmus"
