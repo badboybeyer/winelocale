@@ -70,7 +70,7 @@ DESCRIP = "WineLocale clones the functionality of Microsoft AppLocale in " + \
 WEBSITE = "http://code.google.com/p/winelocale/"
 CONFIG = Path(os.environ["HOME"]) / ".winelocalerc"
 I18N = "i18n"
-ICON = "winelocale.svg"
+ICON_FILENAME = "winelocale.svg"
 TEMP = Path("/tmp/")
 LICENSE = "LICENSE"
 APP_ID = "com.google.code.winelocale"
@@ -83,6 +83,7 @@ Pull in the translation that matches our locale
 # Pull in strings
 DEFAULT_LANG_CODE = 'en_US'
 projectFiles = resources.files('winelocale')
+ICON_FILE_PATH = projectFiles / 'icons' / ICON_FILENAME
 langCode = os.environ["LANG"][0:5]
 
 # TODO: refactor to reduce code reuse
@@ -471,7 +472,9 @@ class WineLocaleWindow(Gtk.Window):
         super().__init__(title=PROGRAM)
 
         self.set_size_request(400, -1)
-        self.set_default_icon_from_file(ICON)
+
+        with resources.as_file(ICON_FILE_PATH) as filePath:
+            self.set_default_icon_from_file(filePath)
 
         # Container element
         self.box = Gtk.Box(Gtk.Orientation.VERTICAL, spacing=8)
@@ -645,14 +648,16 @@ class WineLocaleWindow(Gtk.Window):
         Gtk.about_dialog_set_url_hook(self.click_website)
 
         dialog = Gtk.AboutDialog()
-        dialog.set_icon_from_file(ICON)
+        with resources.as_file(ICON_FILE_PATH) as filePath:
+            dialog.set_icon_from_file(filePath)
         dialog.set_name(PROGRAM)
         dialog.set_version(VERSION)
         dialog.set_comments(STRINGS.get("about", "comments"))
         dialog.set_copyright(COPY)
         license = open(LICENSE, "r")
         dialog.set_license(license.read())
-        dialog.set_logo(Gtk.gdk.pixbuf_new_from_file(ICON))
+        with resources.as_file(ICON_FILE_PATH) as filePath:
+            dialog.set_logo(Gtk.gdk.pixbuf_new_from_file(filePath))
         dialog.set_website(WEBSITE)
         dialog.run()
         dialog.destroy()
@@ -674,7 +679,8 @@ class WineLocaleWindow(Gtk.Window):
                                        Gtk.MESSAGE_INFO, Gtk.BUTTONS_OK,
                                        message)
             dialog.set_title(STRINGS.get("dialogs", "errortitle"))
-            dialog.set_icon_from_file(ICON)
+            with resources.as_file(ICON_FILE_PATH) as filePath:
+                dialog.set_icon_from_file(filePath)
             dialog.run()
             dialog.destroy()
             return(0)
@@ -686,7 +692,8 @@ class WineLocaleWindow(Gtk.Window):
                                        Gtk.MESSAGE_INFO, Gtk.BUTTONS_OK,
                                        message)
             dialog.set_title(STRINGS.get("dialogs", "errortitle"))
-            dialog.set_icon_from_file(ICON)
+            with resources.as_file(ICON_FILE_PATH) as filePath:
+                dialog.set_icon_from_file(filePath)
             dialog.run()
             dialog.destroy()
             return(0)
